@@ -1,0 +1,333 @@
+# PIPELINE DEFINITION
+# Name: aml-final-pipeline
+components:
+  comp-data-ingestion:
+    executorLabel: exec-data-ingestion
+  comp-data-validation:
+    executorLabel: exec-data-validation
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+  comp-feature-engineering:
+    executorLabel: exec-feature-engineering
+  comp-save-model:
+    executorLabel: exec-save-model
+  comp-train-model:
+    executorLabel: exec-train-model
+deploymentSpec:
+  executors:
+    exec-data-ingestion:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_ingestion
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_ingestion():\n\n    import pandas as pd\n\n    train = pd.read_csv(\"\
+          /data/aml_train.csv\")\n    test = pd.read_csv(\"/data/aml_test.csv\")\n\
+          \n    print(\"===== DATA INGESTION =====\")\n    print(\"Train Shape:\"\
+          , train.shape)\n    print(\"Test Shape :\", test.shape)\n\n"
+        image: python:3.11
+    exec-data-validation:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - data_validation
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef data_validation():\n\n    import pandas as pd\n\n    df = pd.read_csv(\"\
+          /data/aml_train.csv\")\n\n    print(\"===== DATA VALIDATION =====\")\n\n\
+          \    print(\"Null Count:\",\n          df.isnull().sum().sum())\n\n    print(\"\
+          Duplicates:\",\n          df.duplicated().sum())\n\n    if \"Is_Laundering\"\
+          \ not in df.columns:\n        raise Exception(\n            \"Target column\
+          \ missing\"\n        )\n\n    print(\"Validation Passed\")\n\n"
+        image: python:3.11
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model():\n\n    import pandas as pd\n    import joblib\n\
+          \n    from sklearn.metrics import (\n        accuracy_score,\n        precision_score,\n\
+          \        recall_score,\n        f1_score\n    )\n\n    model = joblib.load(\n\
+          \        \"/data/aml_model.pkl\"\n    )\n\n    test = pd.read_csv(\n   \
+          \     \"/data/aml_drift.csv\"\n    )\n\n    X_test = test.drop(\n      \
+          \  \"Is_Laundering\",\n        axis=1\n    )\n\n    y_test = test[\n   \
+          \     \"Is_Laundering\"\n    ]\n\n    pred = model.predict(\n        X_test\n\
+          \    )\n\n    print(\n        \"Accuracy:\",\n        accuracy_score(\n\
+          \            y_test,\n            pred\n        )\n    )\n\n    print(\n\
+          \        \"Precision:\",\n        precision_score(\n            y_test,\n\
+          \            pred\n        )\n    )\n\n    print(\n        \"Recall:\",\n\
+          \        recall_score(\n            y_test,\n            pred\n        )\n\
+          \    )\n\n    print(\n        \"F1:\",\n        f1_score(\n            y_test,\n\
+          \            pred\n        )\n    )\n\n"
+        image: python:3.11
+    exec-feature-engineering:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - feature_engineering
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef feature_engineering():\n\n    import pandas as pd\n\n    df =\
+          \ pd.read_csv(\"/data/aml_train.csv\")\n\n    print(\"===== FEATURE ENGINEERING\
+          \ =====\")\n\n    print(\"Columns:\")\n\n    for col in df.columns:\n  \
+          \      print(col)\n\n    print(\"Feature Count:\",\n          len(df.columns)-1)\n\
+          \n"
+        image: python:3.11
+    exec-save-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - save_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef save_model():\n\n    import os\n\n    if os.path.exists(\n  \
+          \      \"/data/aml_model.pkl\"\n    ):\n        print(\n            \"Model\
+          \ Saved Successfully\"\n        )\n    else:\n        raise Exception(\n\
+          \            \"Model Not Found\"\n        )\n\n"
+        image: python:3.11
+    exec-train-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib'  &&  python3 -m pip install --quiet --no-warn-script-location\
+          \ 'kfp==2.16.1' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+          3.9\"' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_model():\n\n    import pandas as pd\n    import joblib\n\
+          \n    from sklearn.ensemble import (\n        RandomForestClassifier\n \
+          \   )\n\n    train = pd.read_csv(\n        \"/data/aml_train.csv\"\n   \
+          \ )\n\n    X = train.drop(\n        \"Is_Laundering\",\n        axis=1\n\
+          \    )\n\n    y = train[\"Is_Laundering\"]\n\n    model = RandomForestClassifier(\n\
+          \        n_estimators=100,\n        random_state=42\n    )\n\n    model.fit(X,\
+          \ y)\n\n    from datetime import datetime\n\n    timestamp = datetime.now().strftime(\"\
+          %Y%m%d_%H%M%S\")\n\n    model_path = f\"/data/aml_model_{timestamp}.pkl\"\
+          \n\n    joblib.dump(model, model_path)\n\n    print(f\"Model Saved: {model_path}\"\
+          )\n\n"
+        image: python:3.11
+pipelineInfo:
+  name: aml-final-pipeline
+root:
+  dag:
+    tasks:
+      data-ingestion:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-ingestion
+        taskInfo:
+          name: data-ingestion
+      data-validation:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-data-validation
+        dependentTasks:
+        - data-ingestion
+        taskInfo:
+          name: data-validation
+      evaluate-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - train-model
+        taskInfo:
+          name: evaluate-model
+      feature-engineering:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-feature-engineering
+        dependentTasks:
+        - data-validation
+        taskInfo:
+          name: feature-engineering
+      save-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-save-model
+        dependentTasks:
+        - evaluate-model
+        taskInfo:
+          name: save-model
+      train-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-model
+        dependentTasks:
+        - feature-engineering
+        taskInfo:
+          name: train-model
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.1
+---
+platforms:
+  kubernetes:
+    deploymentSpec:
+      executors:
+        exec-data-ingestion:
+          pvcMount:
+          - constant: aml-data-pvc
+            mountPath: /data
+            pvcNameParameter:
+              runtimeValue:
+                constant: aml-data-pvc
+        exec-data-validation:
+          pvcMount:
+          - constant: aml-data-pvc
+            mountPath: /data
+            pvcNameParameter:
+              runtimeValue:
+                constant: aml-data-pvc
+        exec-evaluate-model:
+          pvcMount:
+          - constant: aml-data-pvc
+            mountPath: /data
+            pvcNameParameter:
+              runtimeValue:
+                constant: aml-data-pvc
+        exec-feature-engineering:
+          pvcMount:
+          - constant: aml-data-pvc
+            mountPath: /data
+            pvcNameParameter:
+              runtimeValue:
+                constant: aml-data-pvc
+        exec-save-model:
+          pvcMount:
+          - constant: aml-data-pvc
+            mountPath: /data
+            pvcNameParameter:
+              runtimeValue:
+                constant: aml-data-pvc
+        exec-train-model:
+          pvcMount:
+          - constant: aml-data-pvc
+            mountPath: /data
+            pvcNameParameter:
+              runtimeValue:
+                constant: aml-data-pvc
