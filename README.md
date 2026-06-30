@@ -1,5 +1,5 @@
 # MLOPS_Kubeflow
-AML Detection MLOps Project - End-to-End Implementation Steps
+AML Detection MLOps Project- End-to-End Implementation Steps
 Key Learnings
 •	Building multi-stage Kubeflow Pipelines
 •	Kubernetes PVC management
